@@ -1,0 +1,188 @@
+//main.py 
+ 
+from storage import save_slots, load_slots, save_logs 
+from analytics import show_analytics 
+from charts import make_charts 
+ 
+slot_file = "slots.csv" 
+log_file = "logs.csv" 
+lot = ParkingLot() 
+load_slots(slot_file, lot) 
+ 
+if not lot.slots: 
+    lot.add_slot("A1", "Regular") 
+    lot.add_slot("A2", "Regular", "Occupied") 
+    lot.add_slot("E1", "EV") 
+    lot.add_slot("AC1", "Accessible") 
+    save_slots(slot_file, lot.slots) 
+ 
+while True: 
+    print("\n1.Add 2.View 3.Update 4.Allocate 5.Analytics 6.Charts 7.Exit") 
+    ch = input("Enter choice: ") 
+ 
+    if ch == "1": 
+        sid = input("Slot ID: ") 
+        stype = input("Type (Regular/EV/Accessible): ") 
+        lot.add_slot(sid, stype) 
+        save_slots(slot_file, lot.slots) 
+ 
+    elif ch == "2": 
+        lot.show_slots() 
+ 
+    elif ch == "3": 
+        sid = input("Slot ID: ") 
+        status = input("Status (Free/Occupied/Reserved): ") 
+        lot.update_status(sid, status) 
+        save_slots(slot_file, lot.slots) 
+        save_logs(log_file, lot.logs) 
+ 
+    elif ch == "4": 
+        vtype = input("Vehicle type: ") 
+        log = lot.allocate_slot(vtype) 
+        if log: 
+            print("Allocated") 
+            save_slots(slot_file, lot.slots) 
+            save_logs(log_file, lot.logs) 
+        else:
+  print("No slot available") 
+ 
+    elif ch == "5": 
+        save_slots(slot_file, lot.slots) 
+        save_logs(log_file, lot.logs) 
+        show_analytics(slot_file, log_file) 
+ 
+    elif ch == "6": 
+        save_slots(slot_file, lot.slots) 
+        make_charts(slot_file) 
+ 
+    elif ch == "7": 
+        save_slots(slot_file, lot.slots) 
+        save_logs(log_file, lot.logs) 
+        break 
+ 
+    else: 
+        print("Invalid choice") 
+//parking.py 
+ 
+from datetime import datetime 
+ 
+class Slot: 
+    def __init__(self, slot_id, slot_type, status="Free"): 
+        self.slot_id = slot_id 
+        self.slot_type = slot_type 
+        self.status = status 
+        self.updated = datetime.now().strftime("%Y-%m-%d %H:%M:%S") 
+ 
+    def as_list(self): 
+        return [self.slot_id, self.slot_type, self.status, self.updated] 
+ 
+class ParkingLot: 
+    def __init__(self): 
+        self.slots = {} 
+        self.types = {"Regular", "EV", "Accessible"} 
+        self.logs = [] 
+ 
+    def add_slot(self, slot_id, slot_type, status="Free"): 
+        if slot_type in self.types and slot_id not in self.slots: 
+            self.slots[slot_id] = Slot(slot_id, slot_type, status) 
+ 
+    def show_slots(self): 
+        print("\nID\tType\t\tStatus") 
+        for s in self.slots.values(): 
+            print(s.slot_id, "\t", s.slot_type, "\t", s.status) 
+ 
+    def update_status(self, slot_id, status): 
+        if slot_id in self.slots:
+  self.slots[slot_id].status = status 
+            self.slots[slot_id].updated = datetime.now().strftime("%Y-%m-%d %H:%M:%S") 
+            log = (slot_id, status, self.slots[slot_id].updated) 
+            self.logs.append(log) 
+            return log 
+ 
+    def allocate_slot(self, vehicle_type): 
+        order = [vehicle_type, "Regular"] if vehicle_type in ["EV", "Accessible"] else 
+["Regular"] 
+        for t in order: 
+            for s in self.slots.values(): 
+                if s.slot_type == t and s.status == "Free": 
+                    return self.update_status(s.slot_id, "Occupied") 
+        return None 
+//storage.py 
+import csv 
+from parking import Slot 
+ 
+def save_slots(filename, slots): 
+    with open(filename, "w", newline="") as f: 
+        w = csv.writer(f) 
+        w.writerow(["slot_id", "slot_type", "status", "updated"]) 
+        for s in slots.values(): 
+            w.writerow(s.as_list()) 
+ 
+def load_slots(filename, lot): 
+    try: 
+        with open(filename, "r") as f: 
+            r = csv.reader(f) 
+            next(r) 
+            for row in r: 
+                lot.slots[row[0]] = Slot(row[0], row[1], row[2]) 
+                lot.slots[row[0]].updated = row[3] 
+    except FileNotFoundError: 
+        pass 
+ 
+def save_logs(filename, logs): 
+    with open(filename, "w", newline="") as f: 
+        w = csv.writer(f) 
+        w.writerow(["slot_id", "action", "time"]) 
+        w.writerows(logs) 
+ 
+import numpy as np 
+import pandas as pd 
+ 
+def show_analytics(slot_file, log_file): 
+    df = pd.read_csv(slot_file) 
+    total = len(df) 
+    free = len(df[df["status"] == "Free"])
+ occupied = len(df[df["status"] == "Occupied"]) 
+    reserved = len(df[df["status"] == "Reserved"]) 
+    values = np.array([free, occupied, reserved]) 
+ 
+    print("\nTotal:", total) 
+    print("Free:", free) 
+    print("Occupied:", occupied) 
+    print("Reserved:", reserved) 
+    print("Mean status count:", np.mean(values)) 
+    if total: 
+        print("Occupancy %:", round((occupied / total) * 100, 2)) 
+ 
+    try: 
+        logs = pd.read_csv(log_file) 
+        if not logs.empty: 
+            print("Most active slot:") 
+            print(logs["slot_id"].value_counts().head(1)) 
+    except FileNotFoundError: 
+        pass 
+ 
+ 
+ 
+import pandas as pd 
+import matplotlib.pyplot as plt 
+ 
+def make_charts(slot_file): 
+    df = pd.read_csv(slot_file) 
+    counts = df["status"].value_counts() 
+    types = df["slot_type"].value_counts() 
+ 
+    counts.plot(kind="bar", color=["green", "red", "blue"]) 
+    plt.title("Parking Status") 
+    plt.tight_layout() 
+    plt.savefig("status_chart.png") 
+    plt.clf() 
+ 
+    types.plot(kind="pie", autopct="%1.0f%%") 
+    plt.title("Slot Types") 
+    plt.ylabel("") 
+    plt.tight_layout() 
+    plt.savefig("type_chart.png") 
+    plt.clf() 
+ 
+    print("Charts created: status_chart.png, type_chart.png") 
